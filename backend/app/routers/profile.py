@@ -62,15 +62,21 @@ async def stream_about_section(
 
     li_profile = svc.get_linkedin_profile(db, current_user.id)
     headline = li_profile.headline if li_profile else ""
+    has_profile = li_profile is not None
+    user_id = current_user.id
 
     async def generate():
+        from app.database import SessionLocal
         full_text = ""
         async for token in stream_about(profile_dict, headline):
             full_text += token
             yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
-        # Save to DB
-        if li_profile:
-            svc.update_profile_section(db, current_user.id, "about_section", full_text)
+        if has_profile and full_text:
+            db_write = SessionLocal()
+            try:
+                svc.update_profile_section(db_write, user_id, "about_section", full_text)
+            finally:
+                db_write.close()
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")

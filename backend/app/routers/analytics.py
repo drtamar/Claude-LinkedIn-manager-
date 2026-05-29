@@ -49,15 +49,29 @@ async def get_insights(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    import json
+    from app.models.ai_learning import AlgorithmInsight
+
     stored = svc.get_active_insights(db, current_user.id)
     if stored:
         return stored
 
-    # Generate fresh insights if none exist
     user_profile_obj = get_user_profile(db, current_user.id)
     profile_dict = user_profile_to_dict(user_profile_obj) if user_profile_obj else {}
     metrics = svc.get_post_metrics(db, current_user.id, 30)
-    return await generate_insights(profile_dict, metrics)
+    insights = await generate_insights(profile_dict, metrics)
+
+    for insight_data in insights:
+        db.add(AlgorithmInsight(
+            user_id=current_user.id,
+            insight_type=insight_data.get("type", "general"),
+            insight_data=json.dumps(insight_data),
+            confidence_score=insight_data.get("confidence", 0.8),
+            based_on_posts=len(metrics),
+        ))
+    db.commit()
+
+    return svc.get_active_insights(db, current_user.id)
 
 
 @router.post("/refresh")

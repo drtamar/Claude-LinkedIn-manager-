@@ -63,9 +63,59 @@ def disconnect_linkedin(
     return {"message": "LinkedIn session cleared"}
 
 
-@router.post("/publish/{post_id}")
+async def _execute_publish_job(job_id: int, post_id: int, user_id: int, cookies_encrypted: str):
+    from app.database import SessionLocal
+    db = SessionLocal()
+    try:
+        job = db.query(AutomationJob).filter(AutomationJob.id == job_id).first()
+        if not job:
+            return
+        job.status = "running"
+        job.started_at = datetime.utcnow()
+        db.commit()
+
+        post = content_svc.get_post(db, post_id, user_id)
+        if not post:
+            job.status = "failed"
+            job.error_message = "Post not found"
+            job.completed_at = datetime.utcnow()
+            db.commit()
+            return
+
+        result = await publish_post(
+            user_linkedin_cookies_encrypted=cookies_encrypted,
+            content=post.content,
+            user_id=user_id,
+        )
+
+        job.result = json.dumps(result)
+        job.status = "completed" if result.get("success") else "failed"
+        job.error_message = result.get("error") if not result.get("success") else None
+        job.completed_at = datetime.utcnow()
+        job.attempts = 1
+
+        if result.get("success"):
+            post.status = "published"
+            post.published_at = datetime.utcnow()
+            if result.get("linkedin_post_id"):
+                post.linkedin_post_id = result["linkedin_post_id"]
+
+        db.commit()
+    except Exception as e:
+        job = db.query(AutomationJob).filter(AutomationJob.id == job_id).first()
+        if job:
+            job.status = "failed"
+            job.error_message = str(e)
+            job.completed_at = datetime.utcnow()
+            db.commit()
+    finally:
+        db.close()
+
+
+@router.post("/publish/{post_id}", status_code=202)
 async def publish_post_now(
     post_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -80,33 +130,21 @@ async def publish_post_now(
         user_id=current_user.id,
         job_type="post_publish",
         payload=json.dumps({"post_id": post_id}),
-        status="running",
-        started_at=datetime.utcnow(),
+        status="queued",
     )
     db.add(job)
     db.commit()
     db.refresh(job)
 
-    result = await publish_post(
-        user_linkedin_cookies_encrypted=current_user.linkedin_cookies,
-        content=post.content,
-        user_id=current_user.id,
+    background_tasks.add_task(
+        _execute_publish_job,
+        job.id,
+        post_id,
+        current_user.id,
+        current_user.linkedin_cookies,
     )
 
-    job.result = json.dumps(result)
-    job.status = "completed" if result.get("success") else "failed"
-    job.error_message = result.get("error") if not result.get("success") else None
-    job.completed_at = datetime.utcnow()
-    job.attempts = 1
-
-    if result.get("success"):
-        post.status = "published"
-        post.published_at = datetime.utcnow()
-        if result.get("linkedin_post_id"):
-            post.linkedin_post_id = result["linkedin_post_id"]
-
-    db.commit()
-    return result
+    return {"message": "Publishing job queued", "job_id": job.id}
 
 
 @router.get("/jobs")
