@@ -24,7 +24,6 @@ async def lifespan(app: FastAPI):
                 pass  # column already exists
     # Seed default prompt versions
     from app.database import SessionLocal
-    from app.models.ai_learning import PromptVersion
     db = SessionLocal()
     try:
         _seed_default_prompts(db)
@@ -40,6 +39,7 @@ async def lifespan(app: FastAPI):
 
 def _seed_default_prompts(db):
     """Seed initial prompt versions if none exist."""
+    from app.models.ai_learning import PromptVersion
     from app.ai.modules.content_ai import POST_WRITER_SYSTEM
     from app.ai.modules.profile_ai import HEADLINE_SYSTEM, ABOUT_SYSTEM
 
