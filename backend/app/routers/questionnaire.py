@@ -20,6 +20,99 @@ class AnswerRequest(BaseModel):
     answer_type: str = "text"
 
 
+class ImportRequest(BaseModel):
+    raw_text: str
+
+
+@router.post("/import")
+async def import_from_existing_profile(
+    req: ImportRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Skip the questionnaire — import a CV or LinkedIn export directly."""
+    from app.ai.modules.import_ai import extract_profile_from_text
+    from app.models.profile import UserProfile, LinkedInProfile
+
+    if len(req.raw_text.strip()) < 100:
+        raise HTTPException(status_code=400, detail="Profile text too short — paste your full CV or LinkedIn export")
+
+    extracted = await extract_profile_from_text(req.raw_text, current_user.user_type)
+
+    up_data = extracted.get("user_profile", {})
+    li_data = extracted.get("linkedin_profile", {})
+
+    # Save / update UserProfile
+    existing_up = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+    json_fields = {"target_audience", "pain_points", "achievements", "keywords"}
+
+    def _encode(key, val):
+        return json.dumps(val) if isinstance(val, (list, dict)) else val
+
+    if existing_up:
+        for k, v in up_data.items():
+            if hasattr(existing_up, k) and v is not None:
+                setattr(existing_up, k, _encode(k, v))
+        existing_up.raw_answers = json.dumps({"imported": True, "source": req.raw_text[:500]})
+        existing_up.profile_version += 1
+        db.commit()
+        user_profile = existing_up
+    else:
+        up_kwargs = {k: _encode(k, v) for k, v in up_data.items() if v is not None}
+        user_profile = UserProfile(
+            user_id=current_user.id,
+            raw_answers=json.dumps({"imported": True, "source": req.raw_text[:500]}),
+            **up_kwargs,
+        )
+        db.add(user_profile)
+        db.commit()
+        db.refresh(user_profile)
+
+    # Save / update LinkedInProfile
+    existing_li = db.query(LinkedInProfile).filter(
+        LinkedInProfile.user_id == current_user.id,
+        LinkedInProfile.is_active == True,
+    ).first()
+
+    experience = li_data.get("experience", [])
+    skills = li_data.get("skills", [])
+    skills_categorized = li_data.get("skills_categorized", {})
+    education = li_data.get("education", [])
+    certifications = li_data.get("certifications", [])
+
+    li_fields = {
+        "headline": li_data.get("headline", ""),
+        "about_section": li_data.get("about_section", ""),
+        "experience_json": json.dumps(experience),
+        "skills_json": json.dumps(skills),
+        "skills_categorized_json": json.dumps(skills_categorized),
+        "education_json": json.dumps(education),
+        "certifications_json": json.dumps(certifications),
+    }
+
+    if existing_li:
+        for k, v in li_fields.items():
+            setattr(existing_li, k, v)
+        existing_li.version += 1
+        db.commit()
+        li_profile = existing_li
+    else:
+        li_profile = LinkedInProfile(user_id=current_user.id, is_active=True, version=1, **li_fields)
+        db.add(li_profile)
+        db.commit()
+        db.refresh(li_profile)
+
+    return {
+        "message": "Profile imported successfully",
+        "user_profile_id": user_profile.id,
+        "linkedin_profile_id": li_profile.id,
+        "skills_count": len(skills),
+        "experience_count": len(experience),
+        "categories_count": len(skills_categorized),
+    }
+
+
+
 @router.post("/start")
 async def start_questionnaire(
     db: Session = Depends(get_db),
