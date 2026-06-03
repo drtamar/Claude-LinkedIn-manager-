@@ -11,6 +11,17 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     # Create all tables on startup
     Base.metadata.create_all(bind=engine)
+    # Safe column migrations for existing databases
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        for stmt in [
+            "ALTER TABLE linkedin_profiles ADD COLUMN skills_categorized_json TEXT",
+        ]:
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                pass  # column already exists
     # Seed default prompt versions
     from app.database import SessionLocal
     from app.models.ai_learning import PromptVersion

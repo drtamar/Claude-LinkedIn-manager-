@@ -125,6 +125,47 @@ Return JSON: {{"skills": ["skill1", "skill2", ...]}}"""
         return []
 
 
+CATEGORIZE_SYSTEM = """You are a skills taxonomy expert. Group skills into clear, meaningful professional categories.
+Use 4–7 categories that make sense for this person's profile.
+Common categories (adapt as needed): Technical Skills, Domain Expertise, Tools & Platforms,
+Leadership & Management, Sales & Business Development, Data & Analytics, Soft Skills, Languages, etc.
+Return ONLY valid JSON. No explanation."""
+
+
+async def categorize_skills(skills: list[str], user_profile: dict | None = None) -> dict[str, list[str]]:
+    """Group a flat list of skills into professional categories using Claude."""
+    context = ""
+    if user_profile:
+        context = f"\nUser context: {user_profile.get('industry', '')} | {user_profile.get('career_stage', '')} | {user_profile.get('goals', '')}"
+
+    prompt = f"""Organize these {len(skills)} skills into 4–7 professional categories.{context}
+
+Skills to categorize:
+{json.dumps(skills, indent=2)}
+
+Rules:
+- Every skill must appear in exactly one category
+- Category names should be professional and specific (not "Other" or "Miscellaneous")
+- Order skills within each category from most to least important
+- Use 4–7 categories total
+
+Return JSON:
+{{
+  "Category Name": ["skill1", "skill2", ...],
+  "Another Category": ["skill3", ...]
+}}"""
+
+    result = await complete(prompt, system=CATEGORIZE_SYSTEM, model="claude-haiku-4-5-20251001", max_tokens=1024)
+    try:
+        data = json.loads(result)
+        if isinstance(data, dict):
+            return data
+    except json.JSONDecodeError:
+        pass
+    # Fallback: put everything in one category
+    return {"Skills": skills}
+
+
 async def score_profile(headline: str, about: str, skills: list, experience: list) -> dict:
     prompt = f"""LinkedIn Profile:
 Headline: {headline}

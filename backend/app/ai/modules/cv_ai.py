@@ -49,7 +49,14 @@ async def stream_cv(user_profile: dict, linkedin_profile: dict) -> AsyncIterator
         exp_sections.append(block)
 
     exp_text = "\n\n".join(exp_sections) if exp_sections else "No experience entered yet — infer from headline and about section."
-    skills_text = ", ".join(skills[:30]) if skills else "See headline/about"
+    skills_categorized = linkedin_profile.get("skills_categorized", {})
+    if skills_categorized:
+        skills_text = "\n".join(
+            f"  {cat}: {', '.join(s_list)}"
+            for cat, s_list in skills_categorized.items()
+        )
+    else:
+        skills_text = ", ".join(skills[:30]) if skills else "See headline/about"
     achievements_text = "\n".join(f"- {a}" for a in achievements) if achievements else "Extract from experience bullets"
 
     prompt = f"""Generate a complete, original, print-ready professional CV/resume for this person.

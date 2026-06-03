@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { StreamingText } from '../components/ui/StreamingText'
 import { useStreamingResponse } from '../hooks/useStreamingResponse'
-import { Loader2, RefreshCw, Copy, CheckCircle, Star, Download, Printer, FileText } from 'lucide-react'
+import { Loader2, RefreshCw, Copy, CheckCircle, Star, Download, Printer, FileText, Tag } from 'lucide-react'
 
 const SECTIONS = ['Headline', 'About', 'Experience', 'Skills', 'Featured', 'CV Export']
 
@@ -33,6 +33,11 @@ export function ProfileBuilderPage() {
 
   const { mutate: generateVariants, isPending: variantsLoading, data: variants } = useMutation({
     mutationFn: () => api.post('/api/profile/variants/headline').then((r) => r.data),
+  })
+
+  const { mutate: categorizeSkills, isPending: categorizing } = useMutation({
+    mutationFn: () => api.post('/api/profile/categorize-skills').then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['linkedin-profile'] }),
   })
 
   function copyToClipboard(text: string, key: string) {
@@ -250,17 +255,68 @@ strong{color:#0d0d0d}em{color:#555;font-style:italic}
 
           {activeSection === 'Skills' && (
             <div>
-              <h2 className="font-semibold text-gray-900 mb-4">Skills (Top 40 — Algorithm-Optimized)</h2>
-              <div className="flex flex-wrap gap-2">
-                {profile.skills?.map((skill: string, i: number) => (
-                  <span
-                    key={i}
-                    className="px-3 py-1 bg-linkedin-light text-linkedin-blue rounded-full text-sm font-medium"
-                  >
-                    {skill}
-                  </span>
-                ))}
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="font-semibold text-gray-900">Skills</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">{profile.skills?.length || 0} skills · Algorithm-optimized</p>
+                </div>
+                <button
+                  onClick={() => categorizeSkills()}
+                  disabled={categorizing}
+                  className="flex items-center gap-1.5 text-xs bg-linkedin-blue text-white px-3 py-1.5 rounded-lg hover:bg-linkedin-dark transition-colors disabled:opacity-50"
+                >
+                  {categorizing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Tag className="w-3 h-3" />}
+                  {categorizing ? 'Categorizing...' : 'Organize by Category'}
+                </button>
               </div>
+
+              {/* Categorized view */}
+              {profile.skills_categorized && Object.keys(profile.skills_categorized).length > 0 ? (
+                <div className="space-y-5">
+                  {Object.entries(profile.skills_categorized as Record<string, string[]>).map(([category, skills]) => (
+                    <div key={category}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs font-semibold text-linkedin-blue uppercase tracking-wide">{category}</span>
+                        <span className="text-xs text-gray-400">({skills.length})</span>
+                        <div className="flex-1 h-px bg-gray-100" />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {skills.map((skill: string, i: number) => (
+                          <span
+                            key={i}
+                            className="px-3 py-1 bg-linkedin-light text-linkedin-blue rounded-full text-sm font-medium"
+                          >
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  <p className="text-xs text-gray-400 pt-2 border-t border-gray-100">
+                    {profile.skills?.length} total skills organized into {Object.keys(profile.skills_categorized).length} categories.
+                    Click "Organize by Category" to re-run.
+                  </p>
+                </div>
+              ) : (
+                /* Flat view (before categorization) */
+                <div>
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {profile.skills?.map((skill: string, i: number) => (
+                      <span
+                        key={i}
+                        className="px-3 py-1 bg-linkedin-light text-linkedin-blue rounded-full text-sm font-medium"
+                      >
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                  {(profile.skills?.length || 0) > 0 && (
+                    <div className="bg-yellow-50 border border-yellow-100 rounded-lg p-3 text-xs text-yellow-700">
+                      You have {profile.skills?.length} skills. Click "Organize by Category" to group them — makes your profile easier to scan and improves your CV.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

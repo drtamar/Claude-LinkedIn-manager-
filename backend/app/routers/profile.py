@@ -7,7 +7,7 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.user import User
 from app.services import profile_service as svc
-from app.ai.modules.profile_ai import stream_about, generate_headline, score_profile
+from app.ai.modules.profile_ai import stream_about, generate_headline, score_profile, categorize_skills
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 
@@ -23,6 +23,7 @@ def profile_to_dict(p) -> dict:
         "about_section": p.about_section,
         "experience": json.loads(p.experience_json or "[]"),
         "skills": json.loads(p.skills_json or "[]"),
+        "skills_categorized": json.loads(p.skills_categorized_json or "{}") if hasattr(p, "skills_categorized_json") else {},
         "featured": json.loads(p.featured_json or "[]"),
         "profile_score": p.profile_score,
         "score_breakdown": json.loads(p.score_breakdown or "{}"),
@@ -109,6 +110,31 @@ async def generate_variants(
     profile_dict = svc.user_profile_to_dict(user_profile_obj)
     result = await generate_headline(profile_dict)
     return result
+
+
+@router.post("/categorize-skills")
+async def categorize_profile_skills(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Group the user's skills into professional categories using AI."""
+    p = svc.get_linkedin_profile(db, current_user.id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Generate profile first")
+
+    skills = json.loads(p.skills_json or "[]")
+    if not skills:
+        raise HTTPException(status_code=400, detail="No skills to categorize")
+
+    user_profile_obj = svc.get_user_profile(db, current_user.id)
+    user_profile_dict = svc.user_profile_to_dict(user_profile_obj) if user_profile_obj else None
+
+    categorized = await categorize_skills(skills, user_profile_dict)
+
+    p.skills_categorized_json = json.dumps(categorized)
+    db.commit()
+
+    return {"categories": categorized, "total_skills": len(skills)}
 
 
 @router.get("/stream/cv")

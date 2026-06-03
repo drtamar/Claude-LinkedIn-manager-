@@ -46,6 +46,7 @@ class LinkedInProfile(Base):
     banner_text = Column(Text)
     experience_json = Column(Text)  # JSON array
     skills_json = Column(Text)  # JSON array of up to 50
+    skills_categorized_json = Column(Text)  # JSON dict {category: [skills]}
     featured_json = Column(Text)  # JSON array
     education_json = Column(Text)
     certifications_json = Column(Text)
