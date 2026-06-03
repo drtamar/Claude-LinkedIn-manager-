@@ -1,6 +1,6 @@
 import json
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.database import get_db
@@ -109,6 +109,66 @@ async def generate_variants(
     profile_dict = svc.user_profile_to_dict(user_profile_obj)
     result = await generate_headline(profile_dict)
     return result
+
+
+@router.get("/stream/cv")
+async def stream_cv_export(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Stream a complete AI-generated CV from the user's LinkedIn profile data."""
+    user_profile_obj = svc.get_user_profile(db, current_user.id)
+    if not user_profile_obj:
+        raise HTTPException(status_code=400, detail="Complete questionnaire first")
+
+    profile_dict = svc.user_profile_to_dict(user_profile_obj)
+    li_profile = svc.get_linkedin_profile(db, current_user.id)
+    li_dict = profile_to_dict(li_profile)
+
+    async def generate():
+        from app.ai.modules.cv_ai import stream_cv
+        async for token in stream_cv(profile_dict, li_dict):
+            yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/export/cv")
+async def export_cv_html(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate and download a print-ready HTML CV file."""
+    from app.ai.modules.cv_ai import stream_cv, markdown_to_print_html
+
+    user_profile_obj = svc.get_user_profile(db, current_user.id)
+    if not user_profile_obj:
+        raise HTTPException(status_code=400, detail="Complete questionnaire first")
+
+    profile_dict = svc.user_profile_to_dict(user_profile_obj)
+    li_profile = svc.get_linkedin_profile(db, current_user.id)
+    li_dict = profile_to_dict(li_profile)
+
+    cv_markdown = ""
+    async for token in stream_cv(profile_dict, li_dict):
+        cv_markdown += token
+
+    display_name = current_user.display_name or "CV"
+    html = markdown_to_print_html(cv_markdown, display_name)
+
+    safe_name = "".join(c if c.isalnum() or c in "-_ " else "" for c in display_name).strip().replace(" ", "_")
+    filename = f"{safe_name}_CV.html" if safe_name else "CV.html"
+
+    return Response(
+        content=html,
+        media_type="text/html",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/score")

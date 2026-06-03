@@ -3,15 +3,17 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { StreamingText } from '../components/ui/StreamingText'
 import { useStreamingResponse } from '../hooks/useStreamingResponse'
-import { Loader2, RefreshCw, Copy, CheckCircle, Star } from 'lucide-react'
+import { Loader2, RefreshCw, Copy, CheckCircle, Star, Download, Printer, FileText } from 'lucide-react'
 
-const SECTIONS = ['Headline', 'About', 'Experience', 'Skills', 'Featured']
+const SECTIONS = ['Headline', 'About', 'Experience', 'Skills', 'Featured', 'CV Export']
 
 export function ProfileBuilderPage() {
   const qc = useQueryClient()
   const [activeSection, setActiveSection] = useState('Headline')
   const [copied, setCopied] = useState<string | null>(null)
+  const [downloading, setDownloading] = useState(false)
   const { text: aboutText, isStreaming: aboutStreaming, stream: streamAbout, reset: resetAbout } = useStreamingResponse()
+  const { text: cvText, isStreaming: cvStreaming, stream: streamCV, reset: resetCV } = useStreamingResponse()
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['linkedin-profile'],
@@ -42,6 +44,54 @@ export function ProfileBuilderPage() {
   function handleStreamAbout() {
     resetAbout()
     streamAbout('/api/profile/stream/about')
+  }
+
+  function handleGenerateCV() {
+    resetCV()
+    streamCV('/api/profile/stream/cv')
+  }
+
+  async function handleDownloadCV() {
+    setDownloading(true)
+    try {
+      const token = localStorage.getItem('access_token')
+      const res = await fetch('http://localhost:8000/api/profile/export/cv', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error('Failed to generate CV')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const disposition = res.headers.get('content-disposition') || ''
+      const match = disposition.match(/filename="(.+?)"/)
+      a.download = match ? match[1] : 'CV.html'
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  function handlePrintCV() {
+    if (!cvText) return
+    const win = window.open('', '_blank')
+    if (!win) return
+    // minimal print wrapper
+    win.document.write(`<!DOCTYPE html><html><head><title>CV</title>
+<style>
+body{font-family:Georgia,serif;font-size:11pt;line-height:1.55;color:#1a1a1a;max-width:820px;margin:0 auto;padding:40px 50px}
+h1{font-size:22pt;color:#0077B5;border-bottom:2.5px solid #0077B5;padding-bottom:6px;margin-bottom:4px}
+h2{font-size:10pt;font-weight:700;color:#0077B5;text-transform:uppercase;letter-spacing:1.5px;border-bottom:1px solid #d0d7de;padding-bottom:3px;margin:20px 0 10px}
+h3{font-size:10.5pt;font-weight:700;margin-bottom:2px}
+p{margin-bottom:6px}ul{margin:4px 0 10px 18px}li{margin-bottom:3px}
+strong{color:#0d0d0d}em{color:#555;font-style:italic}
+@media print{@page{margin:1.2cm 1cm;size:A4}}
+</style></head><body>
+<pre style="white-space:pre-wrap;font-family:Georgia,serif;font-size:10.5pt;line-height:1.55">${cvText.replace(/</g, '&lt;')}</pre>
+</body></html>`)
+    win.document.close()
+    win.print()
   }
 
   if (isLoading) {
@@ -105,7 +155,12 @@ export function ProfileBuilderPage() {
                     : 'text-gray-600 hover:bg-gray-50'
                 }`}
               >
-                {sec}
+                {sec === 'CV Export' ? (
+                  <span className="flex items-center gap-2">
+                    <FileText className="w-3.5 h-3.5" />
+                    CV Export
+                  </span>
+                ) : sec}
               </button>
             ))}
           </div>
@@ -245,6 +300,99 @@ export function ProfileBuilderPage() {
                 <li className="flex gap-2"><span className="text-linkedin-blue">→</span> Your personal website or portfolio</li>
                 <li className="flex gap-2"><span className="text-linkedin-blue">→</span> A media appearance or press mention</li>
               </ul>
+            </div>
+          )}
+
+          {activeSection === 'CV Export' && (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="font-semibold text-gray-900">Export CV / Resume</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    AI generates a complete, ATS-optimized CV from your LinkedIn profile data
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleGenerateCV}
+                    disabled={cvStreaming}
+                    className="flex items-center gap-1 text-xs bg-linkedin-blue text-white px-3 py-1.5 rounded-lg hover:bg-linkedin-dark transition-colors disabled:opacity-50"
+                  >
+                    {cvStreaming ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                    {cvText ? 'Regenerate CV' : 'Generate CV with AI'}
+                  </button>
+                </div>
+              </div>
+
+              {!cvText && !cvStreaming && (
+                <div className="bg-gray-50 rounded-xl border border-dashed border-gray-200 p-12 text-center">
+                  <FileText className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                  <p className="text-sm font-medium text-gray-500 mb-1">No CV generated yet</p>
+                  <p className="text-xs text-gray-400 mb-6">
+                    Click "Generate CV with AI" to create a complete, print-ready CV from your LinkedIn profile
+                  </p>
+                  <div className="grid grid-cols-3 gap-3 max-w-sm mx-auto text-left">
+                    {[
+                      { label: 'ATS-Optimized', desc: 'Keywords embedded naturally' },
+                      { label: 'Achievement-Oriented', desc: 'Quantified impact bullets' },
+                      { label: 'Print-Ready', desc: 'Download as HTML → PDF' },
+                    ].map(({ label, desc }) => (
+                      <div key={label} className="bg-white rounded-lg border border-gray-100 p-3">
+                        <p className="text-xs font-semibold text-linkedin-blue mb-0.5">{label}</p>
+                        <p className="text-xs text-gray-400">{desc}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(cvText || cvStreaming) && (
+                <>
+                  {/* Action bar */}
+                  {cvText && !cvStreaming && (
+                    <div className="flex gap-2 mb-4">
+                      <button
+                        onClick={() => copyToClipboard(cvText, 'cv')}
+                        className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+                      >
+                        {copied === 'cv' ? <CheckCircle className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                        {copied === 'cv' ? 'Copied!' : 'Copy Markdown'}
+                      </button>
+                      <button
+                        onClick={handlePrintCV}
+                        className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        Print / Save PDF
+                      </button>
+                      <button
+                        onClick={handleDownloadCV}
+                        disabled={downloading}
+                        className="flex items-center gap-1.5 text-xs bg-linkedin-blue text-white px-3 py-1.5 rounded-lg hover:bg-linkedin-dark transition-colors disabled:opacity-50"
+                      >
+                        {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                        {downloading ? 'Preparing...' : 'Download HTML'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* CV preview */}
+                  <div className="bg-gray-50 rounded-lg border border-gray-100 p-6 min-h-96 font-mono">
+                    <StreamingText
+                      text={cvText}
+                      isStreaming={cvStreaming}
+                      className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap"
+                      placeholder="Generating your CV..."
+                    />
+                  </div>
+
+                  {!cvStreaming && cvText && (
+                    <p className="text-xs text-gray-400 mt-3 text-center">
+                      Tip: Click "Print / Save PDF" then choose "Save as PDF" in your browser's print dialog for the best formatting.
+                    </p>
+                  )}
+                </>
+              )}
             </div>
           )}
         </div>
