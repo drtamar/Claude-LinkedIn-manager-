@@ -46,7 +46,8 @@ class TokenResponse(BaseModel):
 
 def create_token(user_id: int) -> str:
     expire = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
-    return jwt.encode({"sub": user_id, "exp": expire}, settings.secret_key, algorithm=settings.algorithm)
+    # JWT spec requires "sub" to be a string
+    return jwt.encode({"sub": str(user_id), "exp": expire}, settings.secret_key, algorithm=settings.algorithm)
 
 
 @router.post("/register", response_model=TokenResponse)
