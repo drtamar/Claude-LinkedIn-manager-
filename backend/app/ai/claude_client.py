@@ -6,10 +6,27 @@ settings = get_settings()
 _client: anthropic.AsyncAnthropic | None = None
 
 
+class MissingAPIKeyError(Exception):
+    """Raised when the Anthropic API key is not configured."""
+    pass
+
+
+def _validate_key() -> str:
+    key = (settings.anthropic_api_key or "").strip()
+    if not key or not key.startswith("sk-ant-") or "PUT-YOUR-KEY" in key or key == "sk-ant-api03-...":
+        raise MissingAPIKeyError(
+            "Anthropic API key is not set. Open the .env file in the project root, "
+            "set ANTHROPIC_API_KEY to your real key from https://console.anthropic.com, "
+            "then restart the backend."
+        )
+    return key
+
+
 def get_client() -> anthropic.AsyncAnthropic:
     global _client
     if _client is None:
-        _client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        key = _validate_key()
+        _client = anthropic.AsyncAnthropic(api_key=key)
     return _client
 
 

@@ -32,12 +32,21 @@ async def import_from_existing_profile(
 ):
     """Skip the questionnaire — import a CV or LinkedIn export directly."""
     from app.ai.modules.import_ai import extract_profile_from_text
+    from app.ai.claude_client import MissingAPIKeyError
     from app.models.profile import UserProfile, LinkedInProfile
+    import anthropic
 
     if len(req.raw_text.strip()) < 100:
         raise HTTPException(status_code=400, detail="Profile text too short — paste your full CV or LinkedIn export")
 
-    extracted = await extract_profile_from_text(req.raw_text, current_user.user_type)
+    try:
+        extracted = await extract_profile_from_text(req.raw_text, current_user.user_type)
+    except MissingAPIKeyError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except anthropic.AuthenticationError:
+        raise HTTPException(status_code=503, detail="Your Anthropic API key was rejected. Check ANTHROPIC_API_KEY in the .env file, then restart the backend.")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"AI extraction failed: {str(e)[:200]}")
 
     up_data = extracted.get("user_profile", {})
     li_data = extracted.get("linkedin_profile", {})
