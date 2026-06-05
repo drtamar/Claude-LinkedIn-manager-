@@ -33,6 +33,8 @@ cp .env.example .env
 | `LINKEDIN_MANAGER_OUTPUT_DIR` | — | Where drafts/CVs are saved (default `./output`) |
 | `LINKEDIN_ACCESS_TOKEN` | — | OAuth token, only to auto-post |
 | `LINKEDIN_AUTHOR_URN` | — | Your member URN, only to auto-post |
+| `LINKEDIN_CLIENT_ID` / `LINKEDIN_CLIENT_SECRET` | — | LinkedIn app credentials, only for `auth` |
+| `LINKEDIN_REDIRECT_URI` | — | OAuth redirect (default `http://localhost:8000/callback`) |
 
 ## Usage
 
@@ -79,6 +81,22 @@ the tool runs in "local-only" mode** — it still generates and saves everything
 just doesn't send anything to LinkedIn. This keeps the default experience zero-setup
 and within LinkedIn's Terms of Service.
 
+### Getting a token with `auth`
+
+Instead of copying the token and URN by hand, run the built-in OAuth flow:
+
+```bash
+# 1. Create a LinkedIn app and set LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET
+#    in .env, and add http://localhost:8000/callback to the app's redirect URLs.
+# 2. Run the flow — it opens your browser, then saves the credentials:
+linkedin-manager auth --write-env .env
+```
+
+It opens LinkedIn's consent page, captures the redirect on a local server,
+exchanges the code for an access token, derives your member URN via the
+OpenID Connect userinfo endpoint, and writes both into `.env`. After that,
+`linkedin-manager post "..." --publish` posts for real.
+
 ## Project layout
 
 ```
@@ -91,6 +109,7 @@ linkedin_manager/
   profile.py         # profile optimization
   cv.py              # CV generation
   linkedin.py        # publishing adapter (with local-only fallback)
+  oauth.py           # LinkedIn OAuth 2.0 flow (token + member URN)
   cli.py             # command-line interface
 tests/               # fast unit tests (no network, no API key needed)
 ```
