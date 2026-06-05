@@ -45,14 +45,23 @@ class ClaudeClient:
 
         Uses streaming with ``get_final_message`` so large outputs don't hit
         request timeouts, then concatenates the text blocks of the reply.
+
+        Wraps SDK failures (bad key, rate limit, network) in a
+        :class:`RuntimeError` so the CLI prints a clean message instead of a
+        raw traceback.
         """
-        with self._client.messages.stream(
-            model=self.model,
-            max_tokens=max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-        ) as stream:
-            message = stream.get_final_message()
+        import anthropic
+
+        try:
+            with self._client.messages.stream(
+                model=self.model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": user}],
+            ) as stream:
+                message = stream.get_final_message()
+        except anthropic.AnthropicError as exc:
+            raise RuntimeError(f"Anthropic API error: {exc}") from exc
 
         return "".join(
             block.text for block in message.content if block.type == "text"

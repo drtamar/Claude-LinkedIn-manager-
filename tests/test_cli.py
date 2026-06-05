@@ -41,6 +41,32 @@ def test_post_command_writes_output(monkeypatch, tmp_path, capsys):
     assert list(tmp_path.glob("post-*.txt"))
 
 
+def test_read_input_long_literal_does_not_crash():
+    # A string longer than any filesystem path limit must be treated as
+    # literal text, not probed as a file path (would raise OSError).
+    long_text = "x" * 5000
+    assert cli._read_input(long_text) == long_text
+
+
+def test_read_input_reads_existing_file(tmp_path):
+    f = tmp_path / "notes.txt"
+    f.write_text("from a file", encoding="utf-8")
+    assert cli._read_input(str(f)) == "from a file"
+
+
+def test_save_failure_raises_runtime_error(tmp_path):
+    from linkedin_manager.config import Config
+
+    # Point the output dir at a path whose parent is a file, so mkdir fails.
+    blocker = tmp_path / "afile"
+    blocker.write_text("x", encoding="utf-8")
+    config = Config(api_key="sk-test", output_dir=blocker / "sub")
+    import pytest
+
+    with pytest.raises(RuntimeError, match="Failed to save output"):
+        cli._save(config, "post", "hello")
+
+
 def test_cv_command_runs(monkeypatch, tmp_path, capsys):
     _patch_client(monkeypatch, "# CV\n...")
     config = Config(api_key="sk-test", output_dir=tmp_path)

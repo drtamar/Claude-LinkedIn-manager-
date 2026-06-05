@@ -31,19 +31,36 @@ def _read_input(value: str) -> str:
     """
     if value == "-":
         return sys.stdin.read().strip()
-    path = Path(value)
-    if path.exists() and path.is_file():
-        return path.read_text(encoding="utf-8").strip()
+    # A long literal string (a full post, profile, or CV) can exceed the OS
+    # path-length limit and make Path checks raise OSError (ENAMETOOLONG /
+    # EINVAL) or ValueError (embedded NULs). Treat any such failure as "not a
+    # file" and fall back to literal text.
+    try:
+        path = Path(value)
+        if path.is_file():
+            return path.read_text(encoding="utf-8").strip()
+    except (OSError, ValueError):
+        pass
     return value
 
 
 def _save(config: Config, name: str, text: str, ext: str = "txt") -> Path:
-    """Write generated text to the output directory and return the path."""
-    config.output_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    path = config.output_dir / f"{name}-{stamp}.{ext}"
-    path.write_text(text, encoding="utf-8")
-    return path
+    """Write generated text to the output directory and return the path.
+
+    Raises a :class:`RuntimeError` (which ``main`` turns into a clean message)
+    if the directory can't be created or written — e.g. permissions, a
+    read-only filesystem, or a full disk.
+    """
+    try:
+        config.output_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        path = config.output_dir / f"{name}-{stamp}.{ext}"
+        path.write_text(text, encoding="utf-8")
+        return path
+    except OSError as exc:
+        raise RuntimeError(
+            f"Failed to save output to {config.output_dir}: {exc}"
+        ) from exc
 
 
 def _build_client(config: Config) -> ClaudeClient:
