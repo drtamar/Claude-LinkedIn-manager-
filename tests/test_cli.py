@@ -91,6 +91,13 @@ def test_upsert_env_preserves_other_lines(tmp_path):
     assert "LINKEDIN_AUTHOR_URN=urn:li:person:9" in text
 
 
+def test_upsert_env_creates_missing_parent_dir(tmp_path):
+    env = tmp_path / "nested" / "dir" / ".env"
+    cli.upsert_env(env, {"LINKEDIN_AUTHOR_URN": "urn:li:person:7"})
+    assert env.exists()
+    assert "urn:li:person:7" in env.read_text()
+
+
 def test_cv_command_runs(monkeypatch, tmp_path, capsys):
     _patch_client(monkeypatch, "# CV\n...")
     config = Config(api_key="sk-test", output_dir=tmp_path)

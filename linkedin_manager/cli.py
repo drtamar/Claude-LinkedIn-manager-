@@ -84,6 +84,8 @@ def upsert_env(path: Path, values: dict[str, str]) -> None:
             out.append(line)
     for key, value in remaining.items():
         out.append(f"{key}={value}")
+    if path.parent != Path(""):
+        path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(out) + "\n", encoding="utf-8")
 
 

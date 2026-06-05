@@ -129,6 +129,8 @@ def exchange_code_for_token(
         raise RuntimeError(f"Token exchange failed ({exc.code}): {detail}") from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(f"Network error during token exchange: {exc.reason}") from exc
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise RuntimeError(f"Invalid JSON in token response: {exc}") from exc
 
 
 def fetch_userinfo(
@@ -146,6 +148,8 @@ def fetch_userinfo(
         raise RuntimeError(f"userinfo request failed ({exc.code}): {detail}") from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(f"Network error during userinfo: {exc.reason}") from exc
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise RuntimeError(f"Invalid JSON in userinfo response: {exc}") from exc
 
 
 def run_flow(
@@ -199,7 +203,13 @@ def run_flow(
         def log_message(self, *args) -> None:  # silence default logging
             pass
 
-    server = http.server.HTTPServer((host, port), Handler)
+    try:
+        server = http.server.HTTPServer((host, port), Handler)
+    except OSError as exc:
+        raise RuntimeError(
+            f"Failed to start local callback server on {host}:{port}: {exc}. "
+            "Make sure the port is free and you have permission to bind to it."
+        ) from exc
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
@@ -216,6 +226,7 @@ def run_flow(
             raise RuntimeError("Timed out waiting for the LinkedIn redirect.")
     finally:
         server.shutdown()
+        server.server_close()
 
     if captured.get("error"):
         raise RuntimeError(f"Authorization denied: {captured['error']}")
