@@ -17,7 +17,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import content, cv, engagement, linkedin, profile, prompts
+from . import content, cv, engagement, linkedin, oauth, profile, prompts
 from .claude_client import ClaudeClient
 from .config import Config
 
@@ -65,6 +65,28 @@ def _save(config: Config, name: str, text: str, ext: str = "txt") -> Path:
 
 def _build_client(config: Config) -> ClaudeClient:
     return ClaudeClient.from_config(config)
+
+
+def upsert_env(path: Path, values: dict[str, str]) -> None:
+    """Insert or update KEY=value lines in a .env-style file.
+
+    Existing keys are replaced in place; new keys are appended. The file is
+    created if it doesn't exist. Kept pure (no env access) for testability.
+    """
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    remaining = dict(values)
+    out: list[str] = []
+    for line in lines:
+        key = line.split("=", 1)[0].strip() if "=" in line else None
+        if key in remaining:
+            out.append(f"{key}={remaining.pop(key)}")
+        else:
+            out.append(line)
+    for key, value in remaining.items():
+        out.append(f"{key}={value}")
+    if path.parent != Path(""):
+        path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(out) + "\n", encoding="utf-8")
 
 
 def _cmd_post(args: argparse.Namespace, config: Config) -> int:
@@ -131,6 +153,38 @@ def _cmd_cv(args: argparse.Namespace, config: Config) -> int:
     return 0
 
 
+def _cmd_auth(args: argparse.Namespace, config: Config) -> int:
+    client_id, client_secret = config.require_oauth_app()
+    result = oauth.run_flow(
+        client_id=client_id,
+        client_secret=client_secret,
+        redirect_uri=config.linkedin_redirect_uri,
+        open_browser=not args.no_browser,
+    )
+    print("\nAuthorization successful.")
+    print(f"LINKEDIN_ACCESS_TOKEN={result.access_token}")
+    print(f"LINKEDIN_AUTHOR_URN={result.author_urn}")
+    if result.expires_in:
+        print(f"(token expires in ~{result.expires_in} seconds)", file=sys.stderr)
+
+    if args.write_env:
+        env_path = Path(args.write_env)
+        upsert_env(
+            env_path,
+            {
+                "LINKEDIN_ACCESS_TOKEN": result.access_token,
+                "LINKEDIN_AUTHOR_URN": result.author_urn,
+            },
+        )
+        print(f"[saved] credentials written to {env_path}", file=sys.stderr)
+    else:
+        print(
+            "\nTip: re-run with --write-env .env to save these automatically.",
+            file=sys.stderr,
+        )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Construct the argument parser (separated out for testability)."""
     parser = argparse.ArgumentParser(
@@ -186,6 +240,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_cv.add_argument("--role", help="Target role to tailor the CV for.")
     p_cv.add_argument("--style", default="standard", help="CV style descriptor.")
     p_cv.set_defaults(func=_cmd_cv)
+
+    # auth
+    p_auth = sub.add_parser(
+        "auth", help="Run the LinkedIn OAuth flow to obtain a token + author URN."
+    )
+    p_auth.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Don't auto-open the browser; print the URL to visit instead.",
+    )
+    p_auth.add_argument(
+        "--write-env",
+        nargs="?",
+        const=".env",
+        help="Save the token and URN to this file (default .env).",
+    )
+    p_auth.set_defaults(func=_cmd_auth)
 
     return parser
 

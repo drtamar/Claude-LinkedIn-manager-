@@ -67,6 +67,37 @@ def test_save_failure_raises_runtime_error(tmp_path):
         cli._save(config, "post", "hello")
 
 
+def test_upsert_env_creates_and_updates(tmp_path):
+    env = tmp_path / ".env"
+    cli.upsert_env(env, {"LINKEDIN_ACCESS_TOKEN": "tok1"})
+    assert "LINKEDIN_ACCESS_TOKEN=tok1" in env.read_text()
+
+    # Existing key is replaced in place; a new key is appended.
+    cli.upsert_env(
+        env, {"LINKEDIN_ACCESS_TOKEN": "tok2", "LINKEDIN_AUTHOR_URN": "urn:li:person:1"}
+    )
+    text = env.read_text()
+    assert "LINKEDIN_ACCESS_TOKEN=tok2" in text
+    assert "tok1" not in text
+    assert "LINKEDIN_AUTHOR_URN=urn:li:person:1" in text
+
+
+def test_upsert_env_preserves_other_lines(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text("ANTHROPIC_API_KEY=sk-keep\n", encoding="utf-8")
+    cli.upsert_env(env, {"LINKEDIN_AUTHOR_URN": "urn:li:person:9"})
+    text = env.read_text()
+    assert "ANTHROPIC_API_KEY=sk-keep" in text
+    assert "LINKEDIN_AUTHOR_URN=urn:li:person:9" in text
+
+
+def test_upsert_env_creates_missing_parent_dir(tmp_path):
+    env = tmp_path / "nested" / "dir" / ".env"
+    cli.upsert_env(env, {"LINKEDIN_AUTHOR_URN": "urn:li:person:7"})
+    assert env.exists()
+    assert "urn:li:person:7" in env.read_text()
+
+
 def test_cv_command_runs(monkeypatch, tmp_path, capsys):
     _patch_client(monkeypatch, "# CV\n...")
     config = Config(api_key="sk-test", output_dir=tmp_path)

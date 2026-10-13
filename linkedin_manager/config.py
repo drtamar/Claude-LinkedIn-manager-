@@ -16,6 +16,7 @@ from pathlib import Path
 # claude-sonnet-4-6 or claude-haiku-4-5).
 DEFAULT_MODEL = "claude-opus-4-8"
 DEFAULT_OUTPUT_DIR = "./output"
+DEFAULT_REDIRECT_URI = "http://localhost:8000/callback"
 
 
 def _load_dotenv() -> None:
@@ -44,6 +45,9 @@ class Config:
     output_dir: Path = Path(DEFAULT_OUTPUT_DIR)
     linkedin_access_token: str | None = None
     linkedin_author_urn: str | None = None
+    linkedin_client_id: str | None = None
+    linkedin_client_secret: str | None = None
+    linkedin_redirect_uri: str = DEFAULT_REDIRECT_URI
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -56,7 +60,22 @@ class Config:
             output_dir=Path(output_dir),
             linkedin_access_token=os.environ.get("LINKEDIN_ACCESS_TOKEN") or None,
             linkedin_author_urn=os.environ.get("LINKEDIN_AUTHOR_URN") or None,
+            linkedin_client_id=os.environ.get("LINKEDIN_CLIENT_ID") or None,
+            linkedin_client_secret=os.environ.get("LINKEDIN_CLIENT_SECRET") or None,
+            linkedin_redirect_uri=os.environ.get(
+                "LINKEDIN_REDIRECT_URI", DEFAULT_REDIRECT_URI
+            ),
         )
+
+    def require_oauth_app(self) -> tuple[str, str]:
+        """Return (client_id, client_secret) or raise if not configured."""
+        if not self.linkedin_client_id or not self.linkedin_client_secret:
+            raise RuntimeError(
+                "LinkedIn OAuth app not configured. Set LINKEDIN_CLIENT_ID and "
+                "LINKEDIN_CLIENT_SECRET (from your LinkedIn developer app), and "
+                "add your redirect URL to the app's authorized redirect URLs."
+            )
+        return self.linkedin_client_id, self.linkedin_client_secret
 
     def require_api_key(self) -> str:
         """Return the API key or raise a clear error if it is missing."""
