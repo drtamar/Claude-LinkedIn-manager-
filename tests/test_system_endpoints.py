@@ -98,7 +98,7 @@ class TestDoctorEndpoint:
         body = client.get("/api/system/doctor").json()
         names = {c["name"] for c in body["checks"]}
         assert names == {"Anthropic API key", "Local model (Ollama)",
-                         "Spending cap", "Cost ledger"}
+                         "Spending cap", "Cost ledger", "Publishing channels"}
         for check in body["checks"]:
             if not check["ok"] and check.get("severity") != "warning":
                 assert check["fix"], f"{check['name']} failed with no fix text"
@@ -143,3 +143,49 @@ class TestDoctorEndpoint:
         assert body["ok"] is False
         cap = next(c for c in body["checks"] if c["name"] == "Spending cap")
         assert cap["ok"] is False and "SOCIAL_DESK_MONTHLY_CAP_USD" in cap["fix"]
+
+
+class TestDoctorChannels:
+    """Stage B added a channels check: "can I actually publish?" is the
+    question the doctor exists to answer."""
+
+    def test_the_website_is_always_ready(self, client):
+        """It writes a file, so it needs no credentials — which is why the
+        roadmap puts the website first."""
+        body = client.get("/api/system/doctor").json()
+        check = next(c for c in body["checks"] if c["name"] == "Publishing channels")
+        assert check["ok"] is True
+        assert "website" in check["detail"]
+
+    def test_an_unconfigured_linkedin_is_a_warning_not_a_failure(self, client):
+        body = client.get("/api/system/doctor").json()
+        check = next(c for c in body["checks"] if c["name"] == "Publishing channels")
+        assert check["severity"] == "warning"
+        assert "connect-linkedin" in (check["fix"] or "")
+
+    def test_doctor_lists_the_channels_and_subjects(self, client):
+        body = client.get("/api/system/doctor").json()
+        assert len(body["channels"]) == 6
+        assert len(body["subjects"]) == 4
+
+
+class TestSubjectsEndpoint:
+    def test_returns_the_matrix(self, client):
+        body = client.get("/api/system/subjects").json()
+        assert len(body["subjects"]) == 4
+        assert body["no_self_promotion"] == ["reddit"]
+
+    def test_every_subject_states_its_rationale(self, client):
+        for subject in client.get("/api/system/subjects").json()["subjects"]:
+            assert subject["rationale"]
+
+
+class TestChannelsEndpoint:
+    def test_separates_ready_from_planned(self, client):
+        body = client.get("/api/system/channels").json()
+        assert "website" in body["ready"]
+        assert set(body["planned"]) == {"instagram", "youtube", "reddit", "tiktok"}
+
+    def test_spends_nothing(self, client):
+        client.get("/api/system/channels")
+        assert cost.month_to_date()["calls"] == 0

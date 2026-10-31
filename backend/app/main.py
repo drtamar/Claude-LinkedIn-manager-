@@ -1,10 +1,13 @@
+import logging
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.database import engine, Base
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -12,16 +15,7 @@ async def lifespan(app: FastAPI):
     # Create all tables on startup
     Base.metadata.create_all(bind=engine)
     # Safe column migrations for existing databases
-    from sqlalchemy import text
-    with engine.connect() as conn:
-        for stmt in [
-            "ALTER TABLE linkedin_profiles ADD COLUMN skills_categorized_json TEXT",
-        ]:
-            try:
-                conn.execute(text(stmt))
-                conn.commit()
-            except Exception:
-                pass  # column already exists
+    _run_column_migrations()
     # Seed default prompt versions
     from app.database import SessionLocal
     db = SessionLocal()
@@ -35,6 +29,74 @@ async def lifespan(app: FastAPI):
     yield
     from app.scheduler.job_scheduler import stop_scheduler
     stop_scheduler()
+
+
+# Columns added after the first release. Each runs once; re-running is a
+# no-op because the column already exists. SQLite can only ADD COLUMN, which
+# is why every one of these is additive and nullable (or carries a default).
+COLUMN_MIGRATIONS = [
+    # 2026-05 — skills categorisation
+    "ALTER TABLE linkedin_profiles ADD COLUMN skills_categorized_json TEXT",
+
+    # Stage B3 — posts become channel-aware. Existing rows were all LinkedIn,
+    # so the default backfills them correctly.
+    "ALTER TABLE posts ADD COLUMN channel TEXT DEFAULT 'linkedin'",
+    "ALTER TABLE posts ADD COLUMN external_id TEXT",
+    "ALTER TABLE posts ADD COLUMN idea_id INTEGER REFERENCES content_ideas(id)",
+    "ALTER TABLE posts ADD COLUMN approved_at DATETIME",
+    "ALTER TABLE posts ADD COLUMN review_tier TEXT",
+
+    # Stage B3 — ideas gain a subject and research provenance.
+    "ALTER TABLE content_ideas ADD COLUMN subject TEXT",
+    "ALTER TABLE content_ideas ADD COLUMN research_ref TEXT",
+    "ALTER TABLE content_ideas ADD COLUMN bias_score REAL",
+    "ALTER TABLE content_ideas ADD COLUMN bias_rationale TEXT",
+    "ALTER TABLE content_ideas ADD COLUMN approved_at DATETIME",
+    "ALTER TABLE content_ideas ADD COLUMN expires_at DATETIME",
+
+    # Indexes the new columns are queried by. IF NOT EXISTS makes these
+    # idempotent on their own.
+    "CREATE INDEX IF NOT EXISTS ix_posts_channel ON posts(channel)",
+    "CREATE INDEX IF NOT EXISTS ix_posts_idea_id ON posts(idea_id)",
+    "CREATE INDEX IF NOT EXISTS ix_content_ideas_subject ON content_ideas(subject)",
+    "CREATE INDEX IF NOT EXISTS ix_content_ideas_research_ref ON content_ideas(research_ref)",
+]
+
+
+def _already_applied(error: Exception) -> bool:
+    """Is this error just "that column is already there"?
+
+    The previous version of this loop swallowed every exception, so a
+    genuinely broken statement would fail silently on every startup forever.
+    We still ignore the already-applied case — that is the whole point of a
+    re-runnable list — but anything else gets logged.
+    """
+    message = str(error).lower()
+    return (
+        "duplicate column name" in message
+        or "already exists" in message
+    )
+
+
+def _run_column_migrations() -> None:
+    from sqlalchemy import text
+
+    applied, skipped = 0, 0
+    with engine.connect() as conn:
+        for statement in COLUMN_MIGRATIONS:
+            try:
+                conn.execute(text(statement))
+                conn.commit()
+                applied += 1
+            except Exception as exc:  # noqa: BLE001 - classified below
+                conn.rollback()
+                if _already_applied(exc):
+                    skipped += 1
+                    continue
+                logger.error("Migration failed: %s -> %s", statement, exc)
+    if applied:
+        logger.info("Applied %s column migration(s), %s already present.",
+                    applied, skipped)
 
 
 def _seed_default_prompts(db):

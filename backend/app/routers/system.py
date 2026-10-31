@@ -10,8 +10,10 @@ from fastapi import APIRouter, Query
 
 from app.ai.claude_client import DEFAULT_MODEL
 from app.config import get_settings
+from app.channels import status as channel_status
 from app.llm import cost, hardware, local
 from app.llm.router import Router, TaskKind
+from app.subjects.definitions import matrix as subject_matrix
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 settings = get_settings()
@@ -86,6 +88,28 @@ def routes():
     }
 
 
+@router.get("/subjects")
+def subjects():
+    """The four subjects and their channel assignments (plan B1, B2)."""
+    from app.subjects import NO_SELF_PROMOTION
+
+    return {
+        "subjects": subject_matrix(),
+        "no_self_promotion": [c.value for c in NO_SELF_PROMOTION],
+    }
+
+
+@router.get("/channels")
+def channels():
+    """Which channels are built and which can publish right now."""
+    rows = channel_status()
+    return {
+        "channels": rows,
+        "ready": [r["channel"] for r in rows if r.get("configured")],
+        "planned": [r["channel"] for r in rows if not r["implemented"]],
+    }
+
+
 @router.get("/doctor")
 def doctor():
     """One call that answers "is this thing set up correctly?".
@@ -142,6 +166,24 @@ def doctor():
         },
     ]
 
+    channels = channel_status()
+    ready = [c["channel"] for c in channels if c.get("configured")]
+    checks.append({
+        "name": "Publishing channels",
+        "ok": bool(ready),
+        "detail": (
+            f"ready: {', '.join(ready)}" if ready
+            else "none configured — the website needs no setup, so this "
+                 "should not happen"
+        ),
+        # Not blocking: channels are set up one at a time, and the website
+        # works with no credentials at all.
+        "severity": "warning",
+        "fix": None if len(ready) > 1 else (
+            "To post to LinkedIn, run: python -m app.cli connect-linkedin"
+        ),
+    })
+
     blocking = [c for c in checks if not c["ok"] and c.get("severity") != "warning"]
     return {
         "ok": not blocking,
@@ -150,4 +192,10 @@ def doctor():
         "cost": spend_now,
         "cloud_model": DEFAULT_MODEL,
         "prices_reviewed": cost.PRICES_REVIEWED,
+        "channels": channels,
+        "subjects": [
+            {"id": s["id"], "name": s["name"], "publishes_to":
+             s["primary"] + s["secondary"]}
+            for s in subject_matrix()
+        ],
     }

@@ -16,6 +16,9 @@ env/
 # Database
 data/
 
+# Generated articles, ready to import into the magazine site
+output/
+
 # Node
 node_modules/
 frontend/dist/

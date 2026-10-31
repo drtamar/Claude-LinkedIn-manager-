@@ -1,16 +1,16 @@
 import json
 import asyncio
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.user import User
 from app.models.ai_learning import AutomationJob
-from app.automation.browser_manager import encrypt_cookies, decrypt_cookies, check_session_valid
-from app.automation.post_publisher import publish_post, send_connection_request
-from app.automation.safety_limiter import get_daily_counts, can_perform
+from app.automation.safety_limiter import get_daily_counts, can_perform, record_action
+from app.channels import Piece, get_adapter
+from app.subjects import Channel
 from app.services import content_service as content_svc
 
 router = APIRouter(prefix="/api/automation", tags=["automation"])
@@ -24,17 +24,23 @@ class PublishRequest(BaseModel):
     post_id: int
 
 
-@router.post("/linkedin/connect")
+OFFICIAL_API_NOTE = (
+    "LinkedIn now publishes through its official API instead of a browser "
+    "session. Run `python -m app.cli connect-linkedin` once to authorise it. "
+    "Driving linkedin.com with stored cookies is automated access under "
+    "LinkedIn's User Agreement and risks a permanent restriction on the "
+    "account, which is why this route was retired."
+)
+
+
+@router.post("/linkedin/connect", status_code=410)
 def save_linkedin_session(
     req: CookieSessionRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    encrypted = encrypt_cookies(req.cookies)
-    current_user.linkedin_cookies = encrypted
-    current_user.linkedin_connected = True
-    db.commit()
-    return {"message": "LinkedIn session saved"}
+    """Retired (decision 0.9). Cookie sessions are no longer accepted."""
+    raise HTTPException(status_code=410, detail=OFFICIAL_API_NOTE)
 
 
 @router.get("/linkedin/status")
@@ -42,14 +48,22 @@ async def check_linkedin_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if not current_user.linkedin_cookies:
-        return {"connected": False, "reason": "No session saved"}
-    cookies = decrypt_cookies(current_user.linkedin_cookies)
-    valid = await check_session_valid(cookies)
-    if not valid:
-        current_user.linkedin_connected = False
-        db.commit()
-    return {"connected": valid}
+    """Whether LinkedIn can be posted to, by the official API.
+
+    Reports on the API credentials now, not on a browser session. A stored
+    cookie is reported separately so it is visible that it is still there and
+    unused — DELETE /linkedin/disconnect clears it.
+    """
+    adapter = get_adapter(Channel.LINKEDIN)
+    return {
+        "connected": adapter.is_configured(),
+        "method": "official_api",
+        "reason": (
+            None if adapter.is_configured()
+            else "Not authorised yet — run `python -m app.cli connect-linkedin`."
+        ),
+        "stale_cookies_stored": bool(current_user.linkedin_cookies),
+    }
 
 
 @router.delete("/linkedin/disconnect")
@@ -63,88 +77,52 @@ def disconnect_linkedin(
     return {"message": "LinkedIn session cleared"}
 
 
-async def _execute_publish_job(job_id: int, post_id: int, user_id: int, cookies_encrypted: str):
-    from app.database import SessionLocal
-    db = SessionLocal()
-    try:
-        job = db.query(AutomationJob).filter(AutomationJob.id == job_id).first()
-        if not job:
-            return
-        job.status = "running"
-        job.started_at = datetime.utcnow()
-        db.commit()
-
-        post = content_svc.get_post(db, post_id, user_id)
-        if not post:
-            job.status = "failed"
-            job.error_message = "Post not found"
-            job.completed_at = datetime.utcnow()
-            db.commit()
-            return
-
-        result = await publish_post(
-            user_linkedin_cookies_encrypted=cookies_encrypted,
-            content=post.content,
-            user_id=user_id,
-        )
-
-        job.result = json.dumps(result)
-        job.status = "completed" if result.get("success") else "failed"
-        job.error_message = result.get("error") if not result.get("success") else None
-        job.completed_at = datetime.utcnow()
-        job.attempts = 1
-
-        if result.get("success"):
-            post.status = "published"
-            post.published_at = datetime.utcnow()
-            if result.get("linkedin_post_id"):
-                post.linkedin_post_id = result["linkedin_post_id"]
-
-        db.commit()
-    except Exception as e:
-        job = db.query(AutomationJob).filter(AutomationJob.id == job_id).first()
-        if job:
-            job.status = "failed"
-            job.error_message = str(e)
-            job.completed_at = datetime.utcnow()
-            db.commit()
-    finally:
-        db.close()
-
-
-@router.post("/publish/{post_id}", status_code=202)
+@router.post("/publish/{post_id}")
 async def publish_post_now(
     post_id: int,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if not current_user.linkedin_cookies:
-        raise HTTPException(status_code=400, detail="Connect LinkedIn first")
-
     post = content_svc.get_post(db, post_id, current_user.id)
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
 
-    job = AutomationJob(
-        user_id=current_user.id,
-        job_type="post_publish",
-        payload=json.dumps({"post_id": post_id}),
-        status="queued",
-    )
-    db.add(job)
+    allowed, reason = can_perform(current_user.id, "post_publish")
+    if not allowed:
+        raise HTTPException(status_code=429, detail=reason)
+
+    channel = Channel(post.channel or "linkedin")
+    adapter = get_adapter(channel)
+    if not adapter.is_configured():
+        raise HTTPException(status_code=400, detail=OFFICIAL_API_NOTE)
+
+    # Synchronous on purpose: an API call returns in under a second, so the
+    # background job and its polling only existed because driving a browser
+    # took minutes.
+    result = adapter.check_then_publish(Piece(
+        title=post.title or "",
+        body=post.content,
+        subject=(post.idea.subject if post.idea else None) or "vet_news",
+        channel=channel,
+        idea_id=post.idea_id,
+    ))
+
+    if not result.published:
+        raise HTTPException(status_code=502, detail=result.detail)
+
+    post.status = "published"
+    post.published_at = datetime.utcnow()
+    post.external_id = result.external_id
+    if channel is Channel.LINKEDIN:
+        post.linkedin_post_id = result.external_id
     db.commit()
-    db.refresh(job)
+    record_action(current_user.id, "post_publish")
 
-    background_tasks.add_task(
-        _execute_publish_job,
-        job.id,
-        post_id,
-        current_user.id,
-        current_user.linkedin_cookies,
-    )
-
-    return {"message": "Publishing job queued", "job_id": job.id}
+    return {
+        "message": result.detail,
+        "external_id": result.external_id,
+        "url": result.location,
+    }
 
 
 @router.get("/jobs")
