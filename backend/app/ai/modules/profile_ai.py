@@ -44,7 +44,7 @@ Generate 3 LinkedIn headline variants. Return JSON:
   "recommended": 0
 }}"""
 
-    result = await complete(prompt, system=HEADLINE_SYSTEM, model="claude-opus-4-8", max_tokens=1024)
+    result = await complete(prompt, system=HEADLINE_SYSTEM, model="claude-opus-4-8", max_tokens=1024, stage="profile.headline")
     try:
         return json.loads(result)
     except json.JSONDecodeError:
@@ -68,7 +68,7 @@ Write a powerful LinkedIn About section (300-500 words) following StoryBrand:
 Write in their voice based on: {user_profile.get('brand_voice_notes', 'professional and clear')}
 Tone: {user_profile.get('content_tone', 'professional')}"""
 
-    async for token in stream_response(prompt, system=ABOUT_SYSTEM, model="claude-opus-4-8", max_tokens=1024):
+    async for token in stream_response(prompt, system=ABOUT_SYSTEM, model="claude-opus-4-8", max_tokens=1024, stage="profile.about"):
         yield token
 
 
@@ -94,7 +94,7 @@ generate optimized LinkedIn experience entries. For each role they mentioned or 
 Prioritize quantified achievements. Use the user's actual accomplishments from:
 {json.dumps(user_profile.get('achievements', []))}"""
 
-    result = await complete(prompt, system=EXPERIENCE_SYSTEM, model="claude-opus-4-8", max_tokens=2048)
+    result = await complete(prompt, system=EXPERIENCE_SYSTEM, model="claude-opus-4-8", max_tokens=2048, stage="profile.experience")
     try:
         return json.loads(result)
     except json.JSONDecodeError:
@@ -117,7 +117,7 @@ Generate the optimal 40 LinkedIn skills for this person. Mix:
 Order from most to least strategic for LinkedIn search visibility.
 Return JSON: {{"skills": ["skill1", "skill2", ...]}}"""
 
-    result = await complete(prompt, system=SKILLS_SYSTEM, model="claude-opus-4-8", max_tokens=512)
+    result = await complete(prompt, system=SKILLS_SYSTEM, model="claude-opus-4-8", max_tokens=512, stage="profile.skills")
     try:
         data = json.loads(result)
         return data.get("skills", [])
@@ -155,7 +155,7 @@ Return JSON:
   "Another Category": ["skill3", ...]
 }}"""
 
-    result = await complete(prompt, system=CATEGORIZE_SYSTEM, model="claude-haiku-4-5-20251001", max_tokens=1024)
+    result = await complete(prompt, system=CATEGORIZE_SYSTEM, model="claude-haiku-4-5", max_tokens=1024, stage="profile.categorize")
     try:
         data = json.loads(result)
         if isinstance(data, dict):
@@ -195,7 +195,7 @@ Return JSON:
   "top_improvements": ["improvement1", "improvement2", "improvement3"]
 }}"""
 
-    result = await complete(prompt, system=SCORER_SYSTEM, model="claude-haiku-4-5-20251001", max_tokens=1024)
+    result = await complete(prompt, system=SCORER_SYSTEM, model="claude-haiku-4-5", max_tokens=1024, stage="profile.score")
     try:
         return json.loads(result)
     except json.JSONDecodeError:

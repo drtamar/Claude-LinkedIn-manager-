@@ -55,7 +55,7 @@ Return JSON:
   ]
 }}"""
 
-    result = await complete(prompt, system=HOOK_SYSTEM, model="claude-haiku-4-5-20251001", max_tokens=1024)
+    result = await complete(prompt, system=HOOK_SYSTEM, model="claude-haiku-4-5", max_tokens=1024, stage="content.hook")
     try:
         data = json.loads(result)
         return data.get("hooks", [])
@@ -103,7 +103,7 @@ Post format requirements:
 
 Write the full post now:"""
 
-    async for token in stream_response(prompt, system=POST_WRITER_SYSTEM, model="claude-opus-4-8", max_tokens=1024):
+    async for token in stream_response(prompt, system=POST_WRITER_SYSTEM, model="claude-opus-4-8", max_tokens=1024, stage="content.post"):
         yield token
 
 
@@ -119,7 +119,7 @@ Generate 7 optimized LinkedIn hashtags. Mix:
 
 Return JSON: {{"hashtags": ["#hashtag1", "#hashtag2", ...]}}"""
 
-    result = await complete(prompt, system=HASHTAG_SYSTEM, model="claude-haiku-4-5-20251001", max_tokens=256)
+    result = await complete(prompt, system=HASHTAG_SYSTEM, model="claude-haiku-4-5", max_tokens=256, stage="content.hashtags")
     try:
         data = json.loads(result)
         return data.get("hashtags", [])
@@ -158,7 +158,7 @@ Return JSON:
   "estimated_engagement_level": "low|medium|high|viral"
 }}"""
 
-    result = await complete(prompt, system=SCORER_SYSTEM, model="claude-haiku-4-5-20251001", max_tokens=1024)
+    result = await complete(prompt, system=SCORER_SYSTEM, model="claude-haiku-4-5", max_tokens=1024, stage="content.score")
     try:
         return json.loads(result)
     except json.JSONDecodeError:
@@ -186,5 +186,5 @@ Format as a numbered list. Be specific — no generic "share your expertise" ide
 Think about: contrarian takes, personal stories, data insights, behind-the-scenes,
 lessons learned, industry myths debunked, hot takes, "I wish someone told me" posts."""
 
-    async for token in stream_response(prompt, system=IDEAS_SYSTEM, model="claude-opus-4-8", max_tokens=2048):
+    async for token in stream_response(prompt, system=IDEAS_SYSTEM, model="claude-opus-4-8", max_tokens=2048, stage="content.ideas"):
         yield token

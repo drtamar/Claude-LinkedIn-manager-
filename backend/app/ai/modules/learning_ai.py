@@ -65,7 +65,7 @@ Analyze and return JSON:
   ]
 }}"""
 
-    result = await complete(prompt, system=ANALYZER_SYSTEM, model="claude-opus-4-8", max_tokens=2048)
+    result = await complete(prompt, system=ANALYZER_SYSTEM, model="claude-opus-4-8", max_tokens=2048, stage="learning.analyze")
     try:
         return json.loads(result)
     except json.JSONDecodeError:
@@ -113,7 +113,7 @@ Return JSON:
   "version_notes": "brief note for the version history"
 }}"""
 
-    result = await complete(prompt, system=REFINER_SYSTEM, model="claude-opus-4-8", max_tokens=2048)
+    result = await complete(prompt, system=REFINER_SYSTEM, model="claude-opus-4-8", max_tokens=2048, stage="learning.refine")
     try:
         return json.loads(result)
     except json.JSONDecodeError:

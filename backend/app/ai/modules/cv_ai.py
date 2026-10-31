@@ -131,7 +131,7 @@ Organize into 2–3 categories (e.g. Technical | Industry Expertise | Leadership
 Make this CV distinctive, not generic. Every line should earn its place.
 Output clean Markdown only — no preamble, no "Here is your CV:" — start directly with # [Name]."""
 
-    async for token in stream_response(prompt, system=CV_SYSTEM, model="claude-opus-4-8", max_tokens=4000):
+    async for token in stream_response(prompt, system=CV_SYSTEM, model="claude-opus-4-8", max_tokens=4000, stage="cv.export"):
         yield token
 
 

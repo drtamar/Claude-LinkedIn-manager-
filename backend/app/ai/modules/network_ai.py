@@ -42,7 +42,7 @@ For each ICP, provide:
 
 Be very specific. These ICPs will drive automated connection requests."""
 
-    async for token in stream_response(prompt, system=ICP_SYSTEM, model="claude-opus-4-8", max_tokens=2048):
+    async for token in stream_response(prompt, system=ICP_SYSTEM, model="claude-opus-4-8", max_tokens=2048, stage="network.icp"):
         yield token
 
 
@@ -66,7 +66,7 @@ My profile:
 Write the note. Under 300 characters. Reference something specific about them.
 Don't be salesy. Give a genuine reason to connect."""
 
-    return await complete(prompt, system=NOTE_SYSTEM, model="claude-haiku-4-5-20251001", max_tokens=128)
+    return await complete(prompt, system=NOTE_SYSTEM, model="claude-haiku-4-5", max_tokens=128, stage="network.connect_note")
 
 
 async def stream_sequence(user_profile: dict, icp_name: str, icp_description: str) -> AsyncIterator[str]:
@@ -102,5 +102,5 @@ Generate JSON:
   }}
 }}"""
 
-    async for token in stream_response(prompt, system=SEQUENCE_SYSTEM, model="claude-opus-4-8", max_tokens=1024):
+    async for token in stream_response(prompt, system=SEQUENCE_SYSTEM, model="claude-opus-4-8", max_tokens=1024, stage="network.sequence"):
         yield token

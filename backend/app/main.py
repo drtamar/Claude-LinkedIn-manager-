@@ -90,7 +90,7 @@ app.add_middleware(
 )
 
 # Register all routers
-from app.routers import auth, questionnaire, profile, content, network, analytics, automation, learning, schedule
+from app.routers import auth, questionnaire, profile, content, network, analytics, automation, learning, schedule, system
 
 app.include_router(auth.router)
 app.include_router(questionnaire.router)
@@ -101,6 +101,7 @@ app.include_router(schedule.router)
 app.include_router(analytics.router)
 app.include_router(automation.router)
 app.include_router(learning.router)
+app.include_router(system.router)
 
 
 @app.get("/health")

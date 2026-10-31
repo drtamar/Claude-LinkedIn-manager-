@@ -138,7 +138,7 @@ async def get_next_question(
         .replace("{{ total_steps }}", "35")\
         .replace("{{ topics_remaining }}", json.dumps(topics_remaining))
 
-    result = await complete(prompt, system=NEXT_QUESTION_SYSTEM, model="claude-haiku-4-5-20251001", max_tokens=512)
+    result = await complete(prompt, system=NEXT_QUESTION_SYSTEM, model="claude-haiku-4-5", max_tokens=512, stage="questionnaire.next_question")
     try:
         return json.loads(result)
     except json.JSONDecodeError:
@@ -156,7 +156,7 @@ async def synthesize_profile(user_type: str, answers: dict) -> dict:
         .replace("{{ user_type }}", user_type)\
         .replace("{{ answers_json }}", json.dumps(answers, indent=2))
 
-    result = await complete(prompt, system=SYNTHESIZE_SYSTEM, model="claude-opus-4-8", max_tokens=2048)
+    result = await complete(prompt, system=SYNTHESIZE_SYSTEM, model="claude-opus-4-8", max_tokens=2048, stage="questionnaire.synthesize")
     try:
         return json.loads(result)
     except json.JSONDecodeError:

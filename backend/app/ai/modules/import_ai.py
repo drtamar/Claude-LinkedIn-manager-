@@ -67,7 +67,7 @@ Extract ALL experience entries. For skills, include every skill mentioned plus i
 For the about_section, write a compelling first-person narrative using their actual background.
 Make the headline specific and keyword-rich."""
 
-    result = await complete(prompt, system=IMPORT_SYSTEM, model="claude-opus-4-8", max_tokens=4000)
+    result = await complete(prompt, system=IMPORT_SYSTEM, model="claude-opus-4-8", max_tokens=4000, stage="import.profile")
 
     # Strip markdown code fences if present
     result = result.strip()

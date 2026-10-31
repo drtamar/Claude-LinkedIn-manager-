@@ -72,7 +72,7 @@ Return JSON:
   "insights": ["specific insight 1", "insight 2"]
 }}"""
 
-    result = await complete(prompt, system=TIMING_SYSTEM, model="claude-haiku-4-5-20251001", max_tokens=512)
+    result = await complete(prompt, system=TIMING_SYSTEM, model="claude-haiku-4-5", max_tokens=512, stage="algorithm.timing")
     try:
         return json.loads(result)
     except json.JSONDecodeError:
@@ -131,7 +131,7 @@ Return JSON array:
   }}
 ]"""
 
-    result = await complete(prompt, system=INSIGHTS_SYSTEM, model="claude-opus-4-8", max_tokens=1024)
+    result = await complete(prompt, system=INSIGHTS_SYSTEM, model="claude-opus-4-8", max_tokens=1024, stage="algorithm.insights")
     try:
         return json.loads(result)
     except json.JSONDecodeError:
